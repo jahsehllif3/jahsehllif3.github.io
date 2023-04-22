@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="zh-CN" dir="ltr" class="js no-touch progressive-image no-reduced-motion progressive">
+  <head>
+    <!-- Global Metadata --><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<meta name="generator" content="Astro v2.0.11">
+
+
+<!-- Primary Meta Tags -->
+<title>浅谈 Go 1.18.1的切片扩容机制 - @jahsehllif3</title>
+<meta name="title" content="浅谈 Go 1.18.1的切片扩容机制 - @jahsehllif3">
+<meta name="description" content="从Go源码分析切片的扩容机制。">
+<meta name="keywords" content="@jahsehllif3">
+
+<!-- DIY Meta Tags -->
+
+
+
+<!-- Open Graph / Facebook -->
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="@jahsehllif3">
+<meta property="og:url" content="https://jahsehllif3.github.io/astro-air-blog/posts/talk-golang-slice/">
+<meta property="og:title" content="浅谈 Go 1.18.1的切片扩容机制 - @jahsehllif3">
+<meta property="og:description" content="从Go源码分析切片的扩容机制。">
+<meta property="og:image" content="https://pic.lookcos.cn/i/usr/uploads/2023/02/1277661091.png">
+<meta property="og:updated_time" content="2023-04-22T13:34:20.492Z">
+<meta property="og:locale" content="zh-CN">
+
+<meta property="article:author" content="Austin">
+<meta property="article:tag" content="源码研究,标准库,golang,slice">
+<meta property="article:published_time" content="2022-04-17T00:00:00.000Z">
+<meta property="article:modified_time" content="2023-04-22T13:34:20.492Z">
+
+<!-- Twitter -->
+<meta property="twitter:card" content="summary_large_image">
+<meta property="twitter:url" content="https://jahsehllif3.github.io/astro-air-blog/posts/talk-golang-slice/">
+<meta property="twitter:title" content="浅谈 Go 1.18.1的切片扩容机制 - @jahsehllif3">
+<meta property="twitter:description" content="从Go源码分析切片的扩容机制。">
+<meta property="twitter:image" content="https://pic.lookcos.cn/i/usr/uploads/2023/02/1277661091.png">
+
+<!-- Sitemap -->
+<link rel="sitemap" href="/sitemap-index.xml">
+  <link rel="stylesheet" href="/astro-air-blog/_astro/404.5bd11af5.css" /></head>
+  <body class="page-article theme-dark">
+    <header>
+  <nav class="nav">
+  <div class="nav-wrapper">
+    <div class="nav-content-wrapper">
+      <div class="nav-content">
+        <a href="/" class="nav-title">@jahsehllif3</a>
+        <div class="nav-menu">
+          <div class="nav-item-wrapper">
+            <a href="/archive" class="nav-item-content">目录</a>
+          </div>
+          <div class="nav-item-wrapper">
+            <a href="/about" class="nav-item-content">关于</a>
+          </div>
+          <div class="nav-item-wrapper">
+            <a href="/rss.xml" class="nav-item-content" target="_blank">RSS</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</nav>
+</header>
+    <main id="main" class="main">
+      <section>
+        <article class="article">
+          <div class="article-header">
+            <div class="category component">
+              <div class="component-content">
+                <div class="category-eyebrow">
+                  <span class="category-eyebrow__category category_original">源码研究</span>
+                  <span class="category-eyebrow__date">2022 年 4 月 17 日</span>
+                </div>
+              </div>
+            </div>
+            <div class="pagetitle component">
+              <div class="component-content">
+                <h1 class="hero-headline">浅谈 Go 1.18.1的切片扩容机制</h1>
+              </div>
+            </div>
+            <div class="article-subhead component">
+              <div class="component-content">从Go源码分析切片的扩容机制。</div>
+            </div>
+
+            <div class="tagssheet component">
+              <div class="component-content">
+                <a href="/tags/源码研究" class="tag">
+                        源码研究
+                      </a><a href="/tags/标准库" class="tag">
+                        标准库
+                      </a><a href="/tags/golang" class="tag">
+                        golang
+                      </a><a href="/tags/slice" class="tag">
+                        slice
+                      </a>
+              </div>
+            </div>
+          </div>
+          <div class="tertiarynav component"><div class="component-content"></div></div><figure class="image component image-fullbleed body-copy-wide nr-scroll-animation nr-scroll-animation--on image-big"><div class="component-content"><div class="image-sharesheet"><div class="image image-load image-asset image-062d2da913d3eb209d2002f531089e3b" id="lht062d2da913d3eb209d2002f531089e3b"><picture class="picture"><img data-src="https://pic.lookcos.cn/i/usr/uploads/2023/02/1277661091.png" alt="golang 吉祥物" class="picture-image"></picture></div></div><div class="image-description"><div class="image-caption">golang 吉祥物</div></div></div></figure>
+<div class="pagebody text component"><div class="component-content"><div class="pagebody-copy">Go 1.18.1的源码大小为439Mib</div>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-bash"><code is:raw="" class="language-bash">root@ubuntu:/home/lookcos/go<span class="token comment"># du -sh</span>
+439M	<span class="token builtin class-name">.</span></code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><div class="pagebody-copy">用<code>grep</code>命令可以在3秒内找到目标代码所在文件以及行数。</div>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-bash"><code is:raw="" class="language-bash">root@ubuntu:/home/lookcos/go<span class="token comment"># grep -rn "type slice struct" .</span>
+./src/runtime/slice.go:15:type slice struct <span class="token punctuation">{</span>
+./src/cmd/compile/internal/types/size.go:20://	<span class="token builtin class-name">type</span> slice struct <span class="token punctuation">{</span></code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><div class="pagebody-copy">在<code>src/runtime/slice.go</code>的第十五行，可以看到对<code>slice</code>的定义：</div>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-bash"><code is:raw="" class="language-bash"><span class="token number">15</span> <span class="token builtin class-name">type</span> slice struct <span class="token punctuation">{</span>
+	      // 切片底层数组指针
+<span class="token number">16</span>        array unsafe.Pointer
+	      // 切片长度
+<span class="token number">17</span>        len   int
+	      // 切片容量
+<span class="token number">18</span>        cap   int
+<span class="token number">19</span> <span class="token punctuation">}</span></code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><h3 class="pagebody-header" id="go-slice的扩容">Go slice的扩容：</h3>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-go"><code is:raw="" class="language-go">nums <span class="token operator">:=</span> <span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token builtin">int</span><span class="token punctuation">{</span><span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">}</span>
+nums <span class="token operator">=</span> <span class="token function">append</span><span class="token punctuation">(</span>nums<span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">,</span> <span class="token number">3</span><span class="token punctuation">,</span> <span class="token number">4</span><span class="token punctuation">)</span></code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><div class="pagebody-copy">对于上面的代码：</div>
+<ol>
+<li>
+<p><code>nums</code>初始化时，cap大小为2。</p>
+</li>
+<li>
+<p>在进行<code>append</code>操作时，添加了3个元素。</p>
+</li>
+</ol>
+<div class="pagebody-copy">此时<code>old.cap = 2</code>，容量至少为<code>cap=5</code>，那么就简单的扩容让<code>cap=5</code>了吗？</div>
+<div class="pagebody-copy">在 <code>src/runtime/slice.go</code>的166行处定义了扩容<code>slice</code>的函数。</div>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-bash"><code is:raw="" class="language-bash"><span class="token number">166</span> func growslice<span class="token punctuation">(</span>et *_type, old slice, cap int<span class="token punctuation">)</span> slice <span class="token punctuation">{</span>
+<span class="token punctuation">..</span>.
+<span class="token number">188</span>         newcap :<span class="token operator">=</span> old.cap
+<span class="token number">189</span>         doublecap :<span class="token operator">=</span> newcap + newcap
+<span class="token number">190</span>         <span class="token keyword">if</span> cap <span class="token operator">></span> doublecap <span class="token punctuation">{</span>
+<span class="token number">191</span>                 newcap <span class="token operator">=</span> cap
+<span class="token number">192</span>         <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{</span>
+<span class="token number">193</span>                 const threshold <span class="token operator">=</span> <span class="token number">256</span>
+<span class="token number">194</span>                 <span class="token keyword">if</span> old.cap <span class="token operator">&#x3C;</span> threshold <span class="token punctuation">{</span>
+<span class="token number">195</span>                         newcap <span class="token operator">=</span> doublecap
+<span class="token number">196</span>                 <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{</span>
+<span class="token number">197</span>                         // Check <span class="token number">0</span> <span class="token operator">&#x3C;</span> newcap to detect overflow
+<span class="token number">198</span>                         // and prevent an infinite loop.
+<span class="token number">199</span>                         <span class="token keyword">for</span> <span class="token number">0</span> <span class="token operator">&#x3C;</span> newcap <span class="token operator">&#x26;&#x26;</span> newcap <span class="token operator">&#x3C;</span> cap <span class="token punctuation">{</span>
+<span class="token number">200</span>                                 // Transition from growing 2x <span class="token keyword">for</span> small slices
+<span class="token number">201</span>                                 // to growing <span class="token number">1</span>.25x <span class="token keyword">for</span> large slices. This formula
+<span class="token number">202</span>                                 // gives a smooth-ish transition between the two.
+<span class="token number">203</span>                                 newcap <span class="token operator">+=</span> <span class="token punctuation">(</span>newcap + <span class="token number">3</span>*threshold<span class="token punctuation">)</span> / <span class="token number">4</span>
+<span class="token number">204</span>                         <span class="token punctuation">}</span>
+<span class="token number">205</span>                         // Set newcap to the requested cap when
+<span class="token number">206</span>                         // the newcap calculation overflowed.
+<span class="token number">207</span>                         <span class="token keyword">if</span> newcap <span class="token operator">&#x3C;=</span> <span class="token number">0</span> <span class="token punctuation">{</span>
+<span class="token number">208</span>                                 newcap <span class="token operator">=</span> cap
+<span class="token number">209</span>                         <span class="token punctuation">}</span>
+<span class="token number">210</span>                 <span class="token punctuation">}</span>
+<span class="token number">211</span>         <span class="token punctuation">}</span>
+<span class="token punctuation">..</span>.</code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><h4 class="pagebody-header" id="计算预估容量newcap">计算预估容量newcap</h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>变量</th><th>含义</th><th>说明</th></tr></thead><tbody><tr><td>old.cap</td><td>扩容前切片容量</td><td></td></tr><tr><td>newcap</td><td>预估容量</td><td>默认为扩容前切片容量(old.cap)</td></tr><tr><td>cap</td><td>扩容后至少需要的最小容量</td><td><code>old.cap</code> + 本次新增的元素数量</td></tr><tr><td>doublecap</td><td>扩容前切片的2倍容量</td><td>old.cap * 2</td></tr></tbody></table>
+<div class="pagebody-copy">大致规则如下：</div>
+</div></div><div class="tertiarynav component"><div class="component-content"></div></div><figure class="image component image-fullbleed body-copy-wide nr-scroll-animation nr-scroll-animation--on image-big"><div class="component-content"><div class="image-sharesheet"><div class="image image-load image-asset image-72f1582f3529bd25cc0bc3e0fab98841" id="lht72f1582f3529bd25cc0bc3e0fab98841"><picture class="picture"><img data-src="https://pic.lookcos.cn/i/usr/uploads/2022/04/573066505.png" alt="https://pic.lookcos.cn/i/usr/uploads/2022/04/573066505.png" class="picture-image"></picture></div></div><div class="image-description"><div class="image-caption">https://pic.lookcos.cn/i/usr/uploads/2022/04/573066505.png</div></div></div></figure>
+<div class="pagebody text component"><div class="component-content"><div class="pagebody-copy">其中,当扩容前容量 >= 256时，会按照公式进行扩容，</div>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-go"><code is:raw="" class="language-go">newcap <span class="token operator">+=</span> <span class="token punctuation">(</span>newcap <span class="token operator">+</span> <span class="token number">3</span><span class="token operator">*</span>threshold<span class="token punctuation">)</span> <span class="token operator">/</span> <span class="token number">4</span></code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><div class="pagebody-copy">相较于1.7版本时，固定按照1.25倍的速率扩容，在1.81版本中改为了</div>
+<blockquote>
+<p>// Transition from growing 2x for small slices
+// to growing 1.25x for large slices. This formula
+// gives a smooth-ish transition between the two.</p>
+</blockquote>
+<div class="pagebody-copy">大概意思为：这个公式，对于容量小的切片，按照2倍的速率扩容和对于容量大的切片，按照1.25倍的速度扩容，为两者提供了平滑的过渡。</div>
+<div class="pagebody-copy">回到刚才的代码，按照这个规则，old.cap = 2, cap = 2 + 3 = 5，那么由于 cap > old.cap *2 ，所以<strong>预估容量</strong> newcap = cap = 5</div>
+<h3 class="pagebody-header" id="内存对齐进一步调整newcap">内存对齐，进一步调整newcap</h3>
+<div class="pagebody-copy">经过预估，得到了newcap = 5，但这并不是最终结果。</div>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-go"><code is:raw="" class="language-go">    <span class="token number">219</span>         <span class="token keyword">switch</span> <span class="token punctuation">{</span>
+    <span class="token number">220</span>         <span class="token keyword">case</span> et<span class="token punctuation">.</span>size <span class="token operator">==</span> <span class="token number">1</span><span class="token punctuation">:</span>
+		<span class="token operator">...</span>
+    <span class="token number">226</span>         <span class="token keyword">case</span> et<span class="token punctuation">.</span>size <span class="token operator">==</span> goarch<span class="token punctuation">.</span>PtrSize<span class="token punctuation">:</span>
+    <span class="token operator">...</span>
+    <span class="token number">232</span>         <span class="token keyword">case</span> <span class="token function">isPowerOfTwo</span><span class="token punctuation">(</span>et<span class="token punctuation">.</span>size<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token operator">...</span>
+    <span class="token number">245</span>         <span class="token keyword">default</span><span class="token punctuation">:</span>
+    <span class="token number">246</span>                 lenmem <span class="token operator">=</span> <span class="token function">uintptr</span><span class="token punctuation">(</span>old<span class="token punctuation">.</span><span class="token builtin">len</span><span class="token punctuation">)</span> <span class="token operator">*</span> et<span class="token punctuation">.</span>size
+    <span class="token number">247</span>                 newlenmem <span class="token operator">=</span> <span class="token function">uintptr</span><span class="token punctuation">(</span><span class="token builtin">cap</span><span class="token punctuation">)</span> <span class="token operator">*</span> et<span class="token punctuation">.</span>size
+    <span class="token number">248</span>                 capmem<span class="token punctuation">,</span> overflow <span class="token operator">=</span> math<span class="token punctuation">.</span><span class="token function">MulUintptr</span><span class="token punctuation">(</span>et<span class="token punctuation">.</span>size<span class="token punctuation">,</span> <span class="token function">uintptr</span><span class="token punctuation">(</span>newcap<span class="token punctuation">)</span><span class="token punctuation">)</span>
+    <span class="token number">249</span>                 capmem <span class="token operator">=</span> <span class="token function">roundupsize</span><span class="token punctuation">(</span>capmem<span class="token punctuation">)</span>
+    <span class="token number">250</span>                 newcap <span class="token operator">=</span> <span class="token function">int</span><span class="token punctuation">(</span>capmem <span class="token operator">/</span> et<span class="token punctuation">.</span>size<span class="token punctuation">)</span>
+    <span class="token number">251</span>         <span class="token punctuation">}</span></code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><div class="pagebody-copy"><code>et</code>代表元素类型，所以这一步和元素类型有关。</div>
+<div class="pagebody-copy">以整型为例，预估容量 * 元素类型的大小，也即是 5 * 8 = 40 bytes （64位环境下）。</div>
+<div class="pagebody-copy">那么经过roundupsize函数调整，得到结果为 48 bytes，而48 bytes可以装下6个元素，对应调整代码为:</div>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-go"><code is:raw="" class="language-go">newcap <span class="token operator">=</span> <span class="token function">int</span><span class="token punctuation">(</span>capmem <span class="token operator">/</span> et<span class="token punctuation">.</span>size<span class="token punctuation">)</span></code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><div class="pagebody-copy">所以，最终容量的大小被调整为6。</div>
+<div class="pagebody-copy">其中<code>roundupsize</code>函数位于在<code>./src/runtime/msize.go</code>文件中。</div>
+<div class="pagebody-copy">它的作用是：返回mallocgc将分配的内存块的大小。</div>
+<div class="pagebody-copy">也就是，由Go语言的内存管理模块返回给你需要的内存块，通常这些内存块都是预先申请好，并且被分为常用的规格，比如8，16， 32， 48， 64等。</div>
+<div class="pagebody-copy">这里我们需要的内存是40 bytes，所以会分配一个足够用，且最接近的内存块。所以给48bytes，这时，重新调整后的容量 newcap就为6。</div></div></div>
+          <div class="component">
+            <div class="component-content">
+              <div class="article-copyright">
+                <a class="content" href="https://creativecommons.org/licenses/by-nc-nd/3.0/deed.zh" target="_blank">版权声明：自由转载-非商用-非衍生-保持署名（创意共享3.0许可证）</a>
+                <p class="content">作者： Austin 发表日期：2022 年 4 月 17 日</p>
+              </div>
+            </div>
+          </div>
+        </article>
+      </section>
+    </main>
+    <div class="footer-main">
+  <div class="content-body footer-wraper">
+    <div class="footer-box">
+      <div class="foot-nav">
+        <div class="foot-nav-items">
+          <div class="item">
+            <div class="logo">@jahsehllif3</div>
+            <div class="email">Email: czhtzsj@gmail.com</div>
+          </div>
+
+          <div class="item products">
+            <div class="item-title">作品</div>
+            <a href="/" target="_blank">本站博客</a>
+            <a href="https://the.top" target="_blank">TOP Link</a> 
+          </div>
+
+          <div class="item community">
+            <div class="item-title">社媒</div>
+            <a href="https://twitter.com/austinit" target="_blank">Twitter</a>
+            <a href="https://github.com/austin2035" target="_blank">Github</a>
+            <a href="https://t.me/austin2035" target="_blank">Telegram</a>
+          </div>
+          
+          <div class="item resources">
+            <div class="item-title">友链</div>
+            <a href="https://the.top" target="_blank">THE.TOP</a>
+            <a href="https://yufengbiji.com" target="_blank">驭风笔记</a>
+          </div>
+
+        </div>
+      </div>
+      <div class="bottom">
+        <div class="copyright">
+          &copy; 2023 Fork From
+          <a href="//github.com/austin2035/astro-air-blog">Astro-air-blog</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    <script>
+      var script = document.createElement("script");
+      script.src = "/static/js/initPost.js";
+      document.head.appendChild(script);
+    </script>
+  </body>
+</html>
