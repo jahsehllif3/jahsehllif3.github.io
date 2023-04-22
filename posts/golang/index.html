@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="zh-CN" dir="ltr" class="js no-touch progressive-image no-reduced-motion progressive">
+  <head>
+    <!-- Global Metadata --><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<meta name="generator" content="Astro v2.0.11">
+
+
+<!-- Primary Meta Tags -->
+<title>Golang net/http &amp; HTTP Serve 源码分析 - @jahsehllif3</title>
+<meta name="title" content="Golang net/http &#38; HTTP Serve 源码分析 - @jahsehllif3">
+<meta name="description" content="很多Go web框架都通过封装 net/http 来实现核心功能，因此学习 net/http 是研究 Gin等框架的基础。">
+<meta name="keywords" content="@jahsehllif3">
+
+<!-- DIY Meta Tags -->
+
+
+
+<!-- Open Graph / Facebook -->
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="@jahsehllif3">
+<meta property="og:url" content="https://jahsehllif3.github.io/astro-air-blog/posts/golang/">
+<meta property="og:title" content="Golang net/http &#38; HTTP Serve 源码分析 - @jahsehllif3">
+<meta property="og:description" content="很多Go web框架都通过封装 net/http 来实现核心功能，因此学习 net/http 是研究 Gin等框架的基础。">
+<meta property="og:image" content="https://pic.lookcos.cn/i/usr/uploads/2022/04/2067928922.png">
+<meta property="og:updated_time" content="2023-04-22T13:37:58.066Z">
+<meta property="og:locale" content="zh-CN">
+
+<meta property="article:author" content="Austin">
+<meta property="article:tag" content="源码研究,标准库,golang,gin">
+<meta property="article:published_time" content="2035-06-01T00:00:00.000Z">
+<meta property="article:modified_time" content="2023-04-22T13:37:58.066Z">
+
+<!-- Twitter -->
+<meta property="twitter:card" content="summary_large_image">
+<meta property="twitter:url" content="https://jahsehllif3.github.io/astro-air-blog/posts/golang/">
+<meta property="twitter:title" content="Golang net/http &#38; HTTP Serve 源码分析 - @jahsehllif3">
+<meta property="twitter:description" content="很多Go web框架都通过封装 net/http 来实现核心功能，因此学习 net/http 是研究 Gin等框架的基础。">
+<meta property="twitter:image" content="https://pic.lookcos.cn/i/usr/uploads/2022/04/2067928922.png">
+
+<!-- Sitemap -->
+<link rel="sitemap" href="/sitemap-index.xml">
+  <link rel="stylesheet" href="/astro-air-blog/_astro/404.5bd11af5.css" /></head>
+  <body class="page-article">
+    <header>
+  <nav class="nav">
+  <div class="nav-wrapper">
+    <div class="nav-content-wrapper">
+      <div class="nav-content">
+        <a href="/" class="nav-title">@jahsehllif3</a>
+        <div class="nav-menu">
+          <div class="nav-item-wrapper">
+            <a href="/archive" class="nav-item-content">目录</a>
+          </div>
+          <div class="nav-item-wrapper">
+            <a href="/about" class="nav-item-content">关于</a>
+          </div>
+          <div class="nav-item-wrapper">
+            <a href="/rss.xml" class="nav-item-content" target="_blank">RSS</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</nav>
+</header>
+    <main id="main" class="main">
+      <section>
+        <article class="article">
+          <div class="article-header">
+            <div class="category component">
+              <div class="component-content">
+                <div class="category-eyebrow">
+                  <span class="category-eyebrow__category category_original">源码研究</span>
+                  <span class="category-eyebrow__date">2035 年 6 月 1 日</span>
+                </div>
+              </div>
+            </div>
+            <div class="pagetitle component">
+              <div class="component-content">
+                <h1 class="hero-headline">Golang net/http &amp; HTTP Serve 源码分析</h1>
+              </div>
+            </div>
+            <div class="article-subhead component">
+              <div class="component-content">很多Go web框架都通过封装 net/http 来实现核心功能，因此学习 net/http 是研究 Gin等框架的基础。</div>
+            </div>
+
+            <div class="tagssheet component">
+              <div class="component-content">
+                <a href="/tags/源码研究" class="tag">
+                        源码研究
+                      </a><a href="/tags/标准库" class="tag">
+                        标准库
+                      </a><a href="/tags/golang" class="tag">
+                        golang
+                      </a><a href="/tags/gin" class="tag">
+                        gin
+                      </a>
+              </div>
+            </div>
+          </div>
+          <div class="tertiarynav component"><div class="component-content"></div></div><figure class="image component image-fullbleed body-copy-wide nr-scroll-animation nr-scroll-animation--on image-wide"><div class="component-content"><div class="image-sharesheet"><div class="image image-load image-asset image-1f3901dbcf2837ba2ba0f6c5fe1a4b71" id="lht1f3901dbcf2837ba2ba0f6c5fe1a4b71"><picture class="picture"><img data-src="https://pic.lookcos.cn/i/usr/uploads/2023/02/3697706570.png" alt="Go HTTP Server的大致处理流程" class="picture-image"></picture></div></div><div class="image-description"><div class="image-caption">Go HTTP Server的大致处理流程</div></div></div></figure>
+<div class="pagebody text component"><div class="component-content"><div class="pagebody-copy">服务器在收到请求时，首先进入路由 Router，接着路由会根据 request 请求的路径，找到对应的处理器(Handler)，处理器再根据 request 进行处理并构造 response 进行返回。</div>
+<h2 class="pagebody-header" id="利用标准库实现一个简单http-server">利用标准库实现一个简单HTTP Server</h2>
+<div class="pagebody-copy">向<strong>main.go</strong>文件写入如下内容：</div>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-go"><code is:raw="" class="language-go"><span class="token keyword">package</span> main
+
+<span class="token keyword">import</span> <span class="token punctuation">(</span>
+    <span class="token string">"fmt"</span>
+    <span class="token string">"net/http"</span>
+<span class="token punctuation">)</span>
+
+<span class="token comment">// 方法一</span>
+<span class="token keyword">type</span> HelloContext <span class="token keyword">struct</span> <span class="token punctuation">{</span>
+    content <span class="token builtin">string</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">func</span><span class="token punctuation">(</span>h <span class="token operator">*</span>HelloContext<span class="token punctuation">)</span> <span class="token function">ServeHTTP</span><span class="token punctuation">(</span>w http<span class="token punctuation">.</span>ResponseWriter<span class="token punctuation">,</span> r <span class="token operator">*</span>http<span class="token punctuation">.</span>Request<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+    fmt<span class="token punctuation">.</span><span class="token function">Fprintf</span><span class="token punctuation">(</span>w<span class="token punctuation">,</span> h<span class="token punctuation">.</span>content<span class="token punctuation">)</span>
+<span class="token punctuation">}</span>
+
+<span class="token comment">// 方法二</span>
+<span class="token keyword">func</span> <span class="token function">helloHandler</span><span class="token punctuation">(</span>w http<span class="token punctuation">.</span>ResponseWriter<span class="token punctuation">,</span> r <span class="token operator">*</span>http<span class="token punctuation">.</span>Request<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+    fmt<span class="token punctuation">.</span><span class="token function">Fprintf</span><span class="token punctuation">(</span>w<span class="token punctuation">,</span> <span class="token string">"Hello, net/http! v2\n"</span><span class="token punctuation">)</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">func</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+    http<span class="token punctuation">.</span><span class="token function">Handle</span><span class="token punctuation">(</span><span class="token string">"/v1"</span><span class="token punctuation">,</span> <span class="token operator">&#x26;</span>HelloContext<span class="token punctuation">{</span>content<span class="token punctuation">:</span> <span class="token string">"Hello, net/http! v1\n"</span><span class="token punctuation">}</span><span class="token punctuation">)</span>
+    http<span class="token punctuation">.</span><span class="token function">HandleFunc</span><span class="token punctuation">(</span><span class="token string">"/v2"</span><span class="token punctuation">,</span> helloHandler<span class="token punctuation">)</span>
+    http<span class="token punctuation">.</span><span class="token function">ListenAndServe</span><span class="token punctuation">(</span><span class="token string">":8080"</span><span class="token punctuation">,</span> <span class="token boolean">nil</span><span class="token punctuation">)</span>
+<span class="token punctuation">}</span></code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><div class="pagebody-copy">运行后，可以用 curl 工具进行测试：</div>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-bash"><code is:raw="" class="language-bash">mac:~ $ <span class="token function">curl</span> <span class="token number">127.0</span>.0.1:8080/v1
+Hello, net/http<span class="token operator">!</span> v1
+mac:~ $ <span class="token function">curl</span> <span class="token number">127.0</span>.0.1:8080/v2
+Hello, net/http<span class="token operator">!</span> v2</code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><div class="pagebody-copy">这段代码我们用 http.Handle 和 http.HandleFunc 两种方法分别在路径 /v1 和 /v2 上注册了两个 http.Handler。注意：Handle 和 Handler 是两个东西。<br>
+这两个 Handler 都对 request 进行了处理，并且通过 fmt.Fprintf 方法写入并返回数据。</div>
+<h2 class="pagebody-header" id="处理器">处理器</h2>
+<h3 class="pagebody-header" id="httphandler">http.Handler</h3>
+<div class="pagebody-copy">先来了解一下 http.Handler (处理器)，</div>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-go"><code is:raw="" class="language-go"><span class="token keyword">type</span> Handler <span class="token keyword">interface</span> <span class="token punctuation">{</span>
+ <span class="token function">ServeHTTP</span><span class="token punctuation">(</span>ResponseWriter<span class="token punctuation">,</span> <span class="token operator">*</span>Request<span class="token punctuation">)</span>
+<span class="token punctuation">}</span></code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><div class="pagebody-copy">它被定义为一个拥有 ServeHTTP 方法的接口，也就是说任何类型，只要实现了 ServeHTTP 方法，就实现了 http.Handler 接口。</div>
+<div class="pagebody-copy">ServeHTTP 方法会读取 *Request 信息，并且向 ResponseWriter 写入 header 与 body 内容。</div>
+<h2 class="pagebody-header" id="路由注册">路由注册</h2>
+<h3 class="pagebody-header" id="httphandle">http.Handle</h3>
+<div class="pagebody-copy">从 main函数出发，来看 http.Handle 函数源码:</div>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-go"><code is:raw="" class="language-go"><span class="token keyword">func</span> <span class="token function">Handle</span><span class="token punctuation">(</span>pattern <span class="token builtin">string</span><span class="token punctuation">,</span> handler Handler<span class="token punctuation">)</span> <span class="token punctuation">{</span> 
+  DefaultServeMux<span class="token punctuation">.</span><span class="token function">Handle</span><span class="token punctuation">(</span>pattern<span class="token punctuation">,</span> handler<span class="token punctuation">)</span> 
+<span class="token punctuation">}</span></code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><div class="pagebody-copy">可以看到，http.Handle 函数调用了 DefaultServeMux.Handle 方法。</div>
+<h3 class="pagebody-header" id="httphandlefunc">http.HandleFunc</h3>
+<div class="pagebody-copy">再来看 http.HandleFunc 的源码：</div>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-go"><code is:raw="" class="language-go"><span class="token keyword">func</span> <span class="token function">HandleFunc</span><span class="token punctuation">(</span>pattern <span class="token builtin">string</span><span class="token punctuation">,</span> handler <span class="token keyword">func</span><span class="token punctuation">(</span>ResponseWriter<span class="token punctuation">,</span> <span class="token operator">*</span>Request<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+ DefaultServeMux<span class="token punctuation">.</span><span class="token function">HandleFunc</span><span class="token punctuation">(</span>pattern<span class="token punctuation">,</span> handler<span class="token punctuation">)</span>
+<span class="token punctuation">}</span></code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><div class="pagebody-copy">它也调用了 DefaultServeMux.HandleFunc 方法，再看此方法源码：</div>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-go"><code is:raw="" class="language-go"><span class="token keyword">func</span> <span class="token punctuation">(</span>mux <span class="token operator">*</span>ServeMux<span class="token punctuation">)</span> <span class="token function">HandleFunc</span><span class="token punctuation">(</span>pattern <span class="token builtin">string</span><span class="token punctuation">,</span> handler <span class="token keyword">func</span><span class="token punctuation">(</span>ResponseWriter<span class="token punctuation">,</span> <span class="token operator">*</span>Request<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+ <span class="token keyword">if</span> handler <span class="token operator">==</span> <span class="token boolean">nil</span> <span class="token punctuation">{</span>
+  <span class="token function">panic</span><span class="token punctuation">(</span><span class="token string">"http: nil handler"</span><span class="token punctuation">)</span>
+ <span class="token punctuation">}</span>
+ mux<span class="token punctuation">.</span><span class="token function">Handle</span><span class="token punctuation">(</span>pattern<span class="token punctuation">,</span> <span class="token function">HandlerFunc</span><span class="token punctuation">(</span>handler<span class="token punctuation">)</span><span class="token punctuation">)</span>
+<span class="token punctuation">}</span></code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><div class="pagebody-copy">不难看出，http.Handle 和 http.HandleFunc 都调用了一个和 ServeMux 对象的 Handle 方法有关。</div>
+<div class="pagebody-copy">这两个方法的作用都是将传入的处理器 (Handler) 注册到对应的路由规则 (pattern)上。</div>
+<div class="pagebody-copy">比如，倒数第三行将 处理器 helloHandler 注册到了路由规则 (路径) /v2 上。这样，当 HTTP 请求的地址是 /v2的时候，就由处理器 helloHandler 来负责处理请求，并且响应。</div>
+<div class="pagebody-copy">mux.Handle 方法中还有一个 http.HandlerFunc ，注意不是 HandleFunc。</div>
+<h2 class="pagebody-header" id="适配器与处理器">适配器与处理器</h2>
+<h3 class="pagebody-header" id="httphandlerfunc">http.HandlerFunc</h3>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-go"><code is:raw="" class="language-go"><span class="token keyword">type</span> HandlerFunc <span class="token keyword">func</span><span class="token punctuation">(</span>ResponseWriter<span class="token punctuation">,</span> <span class="token operator">*</span>Request<span class="token punctuation">)</span></code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><div class="pagebody-copy">HandlerFunc 可以理解为一个适配器，它允许使用普通的函数成为处理器 Handler 对象，前提是这个普通函数拥有 func(ResponseWriter, *Request) 签名。</div>
+<div class="pagebody-copy">上文说到，任何类型只要实现了 ServeHTTP 方法，那它就实现了 Handler接口，它就是一个 Handler 类型。</div>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-go"><code is:raw="" class="language-go"><span class="token keyword">func</span> <span class="token punctuation">(</span>f HandlerFunc<span class="token punctuation">)</span> <span class="token function">ServeHTTP</span><span class="token punctuation">(</span>w ResponseWriter<span class="token punctuation">,</span> r <span class="token operator">*</span>Request<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+ <span class="token function">f</span><span class="token punctuation">(</span>w<span class="token punctuation">,</span> r<span class="token punctuation">)</span>
+<span class="token punctuation">}</span></code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><div class="pagebody-copy">这里呢，非常的巧妙，HandlerFunc 类型实现了 ServeHTTP 方法，并且又将 ServeHTTP方法的参数传给了自身。</div>
+<div class="pagebody-copy">也就是说：</div>
+<ol>
+<li>一个普通的函数，只要参数是 ResponseWriter 和 *Request，或者换种标准点的说法，它的函数签名为 func(ResponseWriter,*Request)，那么它就是 HandlerFunc 类型。</li>
+<li>由于 HandlerFunc 自身实现了 ServeHTTP方法，所以这个普通函数又实现了 Handler 接口，成了 Handler 类型。</li>
+</ol>
+<div class="pagebody-copy">到这里，如何注册、DefaultServeMux 和 ServeMux 是什么，我们暂时还不知道，为了便于理解，这个下文再说。</div>
+<h2 class="pagebody-header" id="监听与服务">监听与服务</h2>
+<h3 class="pagebody-header" id="httplistenandserve">http.ListenAndServe</h3>
+<div class="pagebody-copy">接着往下走，看一下 http.ListenAndServe 做了哪些事情：</div>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-go"><code is:raw="" class="language-go"><span class="token comment">// ListenAndServe listens on the TCP network address addr and then calls</span>
+<span class="token comment">// Serve with handler to handle requests on incoming connections.</span>
+<span class="token comment">// Accepted connections are configured to enable TCP keep-alives.</span>
+<span class="token comment">//</span>
+<span class="token comment">// The handler is typically nil, in which case the DefaultServeMux is used.</span>
+<span class="token comment">//</span>
+<span class="token comment">// ListenAndServe always returns a non-nil error.</span>
+<span class="token keyword">func</span> <span class="token function">ListenAndServe</span><span class="token punctuation">(</span>addr <span class="token builtin">string</span><span class="token punctuation">,</span> handler Handler<span class="token punctuation">)</span> <span class="token builtin">error</span> <span class="token punctuation">{</span>
+ server <span class="token operator">:=</span> <span class="token operator">&#x26;</span>Server<span class="token punctuation">{</span>Addr<span class="token punctuation">:</span> addr<span class="token punctuation">,</span> Handler<span class="token punctuation">:</span> handler<span class="token punctuation">}</span>
+ <span class="token keyword">return</span> server<span class="token punctuation">.</span><span class="token function">ListenAndServe</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">}</span></code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><div class="pagebody-copy">不难看出，http.ListenAndServe 负责监听 TCP 网络地址 addr, 代码中写的是<code>:8080</code> 也即是监听 8080 端口，并且处理相关的请求。</div>
+<div class="pagebody-copy">这里传入的第二个参数是 Handler 类型，根据注释可以看出：如果传入值为 nil ，那么将会使用 DefaultServeMux 。</div>
+<h2 class="pagebody-header" id="服务复用器">服务复用器</h2>
+<h3 class="pagebody-header" id="defaultservemux">DefaultServeMux</h3>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-go"><code is:raw="" class="language-go"><span class="token comment">// DefaultServeMux is the default ServeMux used by Serve.</span>
+<span class="token keyword">var</span> DefaultServeMux <span class="token operator">=</span> <span class="token operator">&#x26;</span>defaultServeMux
+
+<span class="token keyword">var</span> defaultServeMux ServeMux</code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><div class="pagebody-copy">说白了，DefaultServeMux 是 ServeMux 类型的一个实例，由标准库创建。</div>
+<div class="pagebody-copy">下面看 ServeMux 结构体的源码。</div>
+<h3 class="pagebody-header" id="servemux">ServeMux</h3>
+<div class="pagebody-copy">ServeMux 是一个结构体，它的作用是服务复用器。</div>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-go"><code is:raw="" class="language-go"><span class="token keyword">type</span> ServeMux <span class="token keyword">struct</span> <span class="token punctuation">{</span>
+ mu    sync<span class="token punctuation">.</span>RWMutex
+ m     <span class="token keyword">map</span><span class="token punctuation">[</span><span class="token builtin">string</span><span class="token punctuation">]</span>muxEntry
+ es    <span class="token punctuation">[</span><span class="token punctuation">]</span>muxEntry <span class="token comment">// slice of entries sorted from longest to shortest.</span>
+ hosts <span class="token builtin">bool</span>       <span class="token comment">// whether any patterns contain hostnames</span>
+<span class="token punctuation">}</span></code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><div class="pagebody-copy">因为涉及并发，所以这里有个读写锁 mu，主要用于保护下面的 map 类型的成员 m。</div>
+<div class="pagebody-copy">es 与 hosts 和路由规则匹配有关。</div>
+<div class="pagebody-copy">这里重点关注一下 m，它是一个 map ，key 是 string 类型的路由表达式，val 是 muxEntry 类型的结构体。</div>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-go"><code is:raw="" class="language-go"><span class="token keyword">type</span> muxEntry <span class="token keyword">struct</span> <span class="token punctuation">{</span>
+ h       Handler
+ pattern <span class="token builtin">string</span>
+<span class="token punctuation">}</span></code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><div class="pagebody-copy">muxEntry 结构体，描述了路由规则 pattern 对应的处理器  h。</div>
+<h3 class="pagebody-header" id="muxhandle">mux.Handle</h3>
+<div class="pagebody-copy">上文中，http.Handle 和 http.HandleFunc 都调用了 mux.Handle 方法。</div>
+<div class="pagebody-copy">它是结构体 ServeMux 的方法，也就是说，此方法主要把 Handler 对象注册到给定的 pattern 上，也即<strong>路由注册</strong>。</div>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-go"><code is:raw="" class="language-go"><span class="token comment">// Handle registers the handler for the given pattern.</span>
+<span class="token comment">// If a handler already exists for pattern, Handle panics.</span>
+<span class="token keyword">func</span> <span class="token punctuation">(</span>mux <span class="token operator">*</span>ServeMux<span class="token punctuation">)</span> <span class="token function">Handle</span><span class="token punctuation">(</span>pattern <span class="token builtin">string</span><span class="token punctuation">,</span> handler Handler<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+  <span class="token comment">// 为了保护 ServeMux 成员 map 类型的 m 的读写，分别在方法开始和结束的时候进行加锁和解锁的操作。</span>
+ mux<span class="token punctuation">.</span>mu<span class="token punctuation">.</span><span class="token function">Lock</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+ <span class="token keyword">defer</span> mux<span class="token punctuation">.</span>mu<span class="token punctuation">.</span><span class="token function">Unlock</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+ <span class="token comment">// 如果路由规则 pattern 为空，则直接 panic。</span>
+ <span class="token keyword">if</span> pattern <span class="token operator">==</span> <span class="token string">""</span> <span class="token punctuation">{</span>
+  <span class="token function">panic</span><span class="token punctuation">(</span><span class="token string">"http: invalid pattern"</span><span class="token punctuation">)</span>
+ <span class="token punctuation">}</span>
+  <span class="token comment">// 如果 http.Handler 类型的处理器 handler 为空，则panic。</span>
+ <span class="token keyword">if</span> handler <span class="token operator">==</span> <span class="token boolean">nil</span> <span class="token punctuation">{</span>
+  <span class="token function">panic</span><span class="token punctuation">(</span><span class="token string">"http: nil handler"</span><span class="token punctuation">)</span>
+ <span class="token punctuation">}</span>
+  <span class="token comment">// 如果路由规则 pattern 已经存在，则直接 panic。</span>
+ <span class="token keyword">if</span> <span class="token boolean">_</span><span class="token punctuation">,</span> exist <span class="token operator">:=</span> mux<span class="token punctuation">.</span>m<span class="token punctuation">[</span>pattern<span class="token punctuation">]</span><span class="token punctuation">;</span> exist <span class="token punctuation">{</span>
+  <span class="token function">panic</span><span class="token punctuation">(</span><span class="token string">"http: multiple registrations for "</span> <span class="token operator">+</span> pattern<span class="token punctuation">)</span>
+ <span class="token punctuation">}</span>
+ <span class="token comment">// 如果成员 m 为空，则 make 一个新的 map。</span>
+ <span class="token keyword">if</span> mux<span class="token punctuation">.</span>m <span class="token operator">==</span> <span class="token boolean">nil</span> <span class="token punctuation">{</span>
+  mux<span class="token punctuation">.</span>m <span class="token operator">=</span> <span class="token function">make</span><span class="token punctuation">(</span><span class="token keyword">map</span><span class="token punctuation">[</span><span class="token builtin">string</span><span class="token punctuation">]</span>muxEntry<span class="token punctuation">)</span>
+ <span class="token punctuation">}</span>
+  <span class="token comment">// 创建一个 muxEntry，并将 pattern 对应的 Handler 放进去。</span>
+ e <span class="token operator">:=</span> muxEntry<span class="token punctuation">{</span>h<span class="token punctuation">:</span> handler<span class="token punctuation">,</span> pattern<span class="token punctuation">:</span> pattern<span class="token punctuation">}</span>
+  <span class="token comment">// 写入 m， key 为 pattern ，value 为新建的 muxEntry 类型的 e ，也即新增一个路由规则。</span>
+ mux<span class="token punctuation">.</span>m<span class="token punctuation">[</span>pattern<span class="token punctuation">]</span> <span class="token operator">=</span> e
+  <span class="token comment">// 如果路由规则以字符 / 结尾，则给将新建的 muxEntry 类型的 e 放到成员 es 中。</span>
+  <span class="token comment">// es 是一个切片，使用 http.appendSorted 方法加入元素，以确保 es 中的元素(路由)是从最长到最短。</span>
+ <span class="token keyword">if</span> pattern<span class="token punctuation">[</span><span class="token function">len</span><span class="token punctuation">(</span>pattern<span class="token punctuation">)</span><span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">]</span> <span class="token operator">==</span> <span class="token char">'/'</span> <span class="token punctuation">{</span>
+  mux<span class="token punctuation">.</span>es <span class="token operator">=</span> <span class="token function">appendSorted</span><span class="token punctuation">(</span>mux<span class="token punctuation">.</span>es<span class="token punctuation">,</span> e<span class="token punctuation">)</span>
+ <span class="token punctuation">}</span>
+  <span class="token comment">// 最后，如果路由规则不是以字符 / 开头，那么给成员 hosts 赋值 true 。</span>
+ <span class="token keyword">if</span> pattern<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span> <span class="token operator">!=</span> <span class="token char">'/'</span> <span class="token punctuation">{</span>
+  mux<span class="token punctuation">.</span>hosts <span class="token operator">=</span> <span class="token boolean">true</span>
+ <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><h3 class="pagebody-header" id="muxservehttp">mux.ServeHTTP</h3>
+<div class="pagebody-copy">我把 ServeMux 的 ServeHTTP 方法简称为 mux.ServeHTTP，下文也是一样。</div>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-go"><code is:raw="" class="language-go"><span class="token keyword">func</span> <span class="token punctuation">(</span>mux <span class="token operator">*</span>ServeMux<span class="token punctuation">)</span> <span class="token function">ServeHTTP</span><span class="token punctuation">(</span>w ResponseWriter<span class="token punctuation">,</span> r <span class="token operator">*</span>Request<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+ <span class="token keyword">if</span> r<span class="token punctuation">.</span>RequestURI <span class="token operator">==</span> <span class="token string">"*"</span> <span class="token punctuation">{</span>
+  <span class="token keyword">if</span> r<span class="token punctuation">.</span><span class="token function">ProtoAtLeast</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+   w<span class="token punctuation">.</span><span class="token function">Header</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">Set</span><span class="token punctuation">(</span><span class="token string">"Connection"</span><span class="token punctuation">,</span> <span class="token string">"close"</span><span class="token punctuation">)</span>
+  <span class="token punctuation">}</span>
+  w<span class="token punctuation">.</span><span class="token function">WriteHeader</span><span class="token punctuation">(</span>StatusBadRequest<span class="token punctuation">)</span>
+  <span class="token keyword">return</span>
+ <span class="token punctuation">}</span>
+ h<span class="token punctuation">,</span> <span class="token boolean">_</span> <span class="token operator">:=</span> mux<span class="token punctuation">.</span><span class="token function">Handler</span><span class="token punctuation">(</span>r<span class="token punctuation">)</span>
+ h<span class="token punctuation">.</span><span class="token function">ServeHTTP</span><span class="token punctuation">(</span>w<span class="token punctuation">,</span> r<span class="token punctuation">)</span>
+<span class="token punctuation">}</span></code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><div class="pagebody-copy">ServeMux 结构体同样实现了 ServeHTTP 方法，也即它也实现了 Handler 接口，是一个 Handler 类型的对象。</div>
+<div class="pagebody-copy">但它并不负责处理具体的请求，篇幅有限，这里给出，调用的 mux.Handler 方法签名：</div>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-go"><code is:raw="" class="language-go"><span class="token keyword">func</span> <span class="token punctuation">(</span>mux <span class="token operator">*</span>ServeMux<span class="token punctuation">)</span> <span class="token function">handler</span><span class="token punctuation">(</span>host<span class="token punctuation">,</span> path <span class="token builtin">string</span><span class="token punctuation">)</span> <span class="token punctuation">(</span>h Handler<span class="token punctuation">,</span> pattern <span class="token builtin">string</span><span class="token punctuation">)</span></code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><div class="pagebody-copy">总的来说，mux.ServeHTTP  调用了 mux.Handler 方法，通过 host 和 path 找到具体的 处理器 Handler 和路由规则 pattern ，然后让对应的 Handler 的 ServeHTTP 方法去处理请求。</div>
+<h2 class="pagebody-header" id="连接与请求的处理">连接与请求的处理</h2>
+<div class="pagebody-copy">其实搞懂上面方法以及其之间的关系，对于进一步的学习 Go Web 框架 (比如 Gin ) 就已经有很大的帮助了。从监听与服务开始，代码更加底层，这里我主要关心的是，一次请求是如何到达 ServeHTTP 的。</div>
+<div class="pagebody-copy">http.ListenAndServe 方法中，使用传入的监听地址 addr 和处理器 handler 初始化一个 HTTP 服务器 http.Server。</div>
+<div class="pagebody-copy">Server 结构体，主要定义了需要跑一个 HTTP Server 所需要的参数：</div>
+<h3 class="pagebody-header" id="server">Server</h3>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-go"><code is:raw="" class="language-go"><span class="token keyword">type</span> Server <span class="token keyword">struct</span> <span class="token punctuation">{</span>
+ Addr <span class="token builtin">string</span>
+ Handler Handler <span class="token comment">// handler to invoke, http.DefaultServeMux if nil</span>
+  
+ TLSConfig <span class="token operator">*</span>tls<span class="token punctuation">.</span>Config
+ ReadTimeout time<span class="token punctuation">.</span>Duration
+ ReadHeaderTimeout time<span class="token punctuation">.</span>Duration
+ WriteTimeout time<span class="token punctuation">.</span>Duration
+ IdleTimeout time<span class="token punctuation">.</span>Duration
+ MaxHeaderBytes <span class="token builtin">int</span>
+ TLSNextProto <span class="token keyword">map</span><span class="token punctuation">[</span><span class="token builtin">string</span><span class="token punctuation">]</span><span class="token keyword">func</span><span class="token punctuation">(</span><span class="token operator">*</span>Server<span class="token punctuation">,</span> <span class="token operator">*</span>tls<span class="token punctuation">.</span>Conn<span class="token punctuation">,</span> Handler<span class="token punctuation">)</span>
+ ConnState <span class="token keyword">func</span><span class="token punctuation">(</span>net<span class="token punctuation">.</span>Conn<span class="token punctuation">,</span> ConnState<span class="token punctuation">)</span>
+ ErrorLog <span class="token operator">*</span>log<span class="token punctuation">.</span>Logger
+ BaseContext <span class="token keyword">func</span><span class="token punctuation">(</span>net<span class="token punctuation">.</span>Listener<span class="token punctuation">)</span> context<span class="token punctuation">.</span>Context
+ ConnContext <span class="token keyword">func</span><span class="token punctuation">(</span>ctx context<span class="token punctuation">.</span>Context<span class="token punctuation">,</span> c net<span class="token punctuation">.</span>Conn<span class="token punctuation">)</span> context<span class="token punctuation">.</span>Context
+ inShutdown atomicBool <span class="token comment">// true when server is in shutdown</span>
+ disableKeepAlives <span class="token builtin">int32</span>     <span class="token comment">// accessed atomically.</span>
+ nextProtoOnce     sync<span class="token punctuation">.</span>Once <span class="token comment">// guards setupHTTP2_* init</span>
+ nextProtoErr      <span class="token builtin">error</span>     <span class="token comment">// result of http2.ConfigureServer if used</span>
+  
+ mu         sync<span class="token punctuation">.</span>Mutex
+ listeners  <span class="token keyword">map</span><span class="token punctuation">[</span><span class="token operator">*</span>net<span class="token punctuation">.</span>Listener<span class="token punctuation">]</span><span class="token keyword">struct</span><span class="token punctuation">{</span><span class="token punctuation">}</span>
+ activeConn <span class="token keyword">map</span><span class="token punctuation">[</span><span class="token operator">*</span>conn<span class="token punctuation">]</span><span class="token keyword">struct</span><span class="token punctuation">{</span><span class="token punctuation">}</span>
+ doneChan   <span class="token keyword">chan</span> <span class="token keyword">struct</span><span class="token punctuation">{</span><span class="token punctuation">}</span>
+ onShutdown <span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token keyword">func</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">}</span></code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><div class="pagebody-copy">这些参数不是重点，接着往下。</div>
+<h3 class="pagebody-header" id="serverlistenandserve">server.ListenAndServe</h3>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-go"><code is:raw="" class="language-go"><span class="token keyword">func</span> <span class="token punctuation">(</span>srv <span class="token operator">*</span>Server<span class="token punctuation">)</span> <span class="token function">ListenAndServe</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token builtin">error</span> <span class="token punctuation">{</span>
+ <span class="token keyword">if</span> srv<span class="token punctuation">.</span><span class="token function">shuttingDown</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+  <span class="token keyword">return</span> ErrServerClosed
+ <span class="token punctuation">}</span>
+ addr <span class="token operator">:=</span> srv<span class="token punctuation">.</span>Addr
+ <span class="token keyword">if</span> addr <span class="token operator">==</span> <span class="token string">""</span> <span class="token punctuation">{</span>
+  addr <span class="token operator">=</span> <span class="token string">":http"</span>
+ <span class="token punctuation">}</span>
+ ln<span class="token punctuation">,</span> err <span class="token operator">:=</span> net<span class="token punctuation">.</span><span class="token function">Listen</span><span class="token punctuation">(</span><span class="token string">"tcp"</span><span class="token punctuation">,</span> addr<span class="token punctuation">)</span>
+ <span class="token keyword">if</span> err <span class="token operator">!=</span> <span class="token boolean">nil</span> <span class="token punctuation">{</span>
+  <span class="token keyword">return</span> err
+ <span class="token punctuation">}</span>
+ <span class="token keyword">return</span> srv<span class="token punctuation">.</span><span class="token function">Serve</span><span class="token punctuation">(</span>ln<span class="token punctuation">)</span>
+<span class="token punctuation">}</span></code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><div class="pagebody-copy">Server 结构体的 ListenAndServe 方法会监听 TCP 网络地址 addr ，然后调用 srv.Serve 处理传入连接的请求。</div>
+<h3 class="pagebody-header" id="srvserve">srv.Serve</h3>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-go"><code is:raw="" class="language-go"><span class="token keyword">func</span> <span class="token punctuation">(</span>srv <span class="token operator">*</span>Server<span class="token punctuation">)</span> <span class="token function">Serve</span><span class="token punctuation">(</span>l net<span class="token punctuation">.</span>Listener<span class="token punctuation">)</span> <span class="token builtin">error</span> <span class="token punctuation">{</span>
+ <span class="token comment">// ...省略部分</span>
+ <span class="token keyword">for</span> <span class="token punctuation">{</span>
+    <span class="token comment">// 循环监听 TCP 连接</span>
+  rw<span class="token punctuation">,</span> err <span class="token operator">:=</span> l<span class="token punctuation">.</span><span class="token function">Accept</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+  <span class="token keyword">if</span> err <span class="token operator">!=</span> <span class="token boolean">nil</span> <span class="token punctuation">{</span>
+    <span class="token operator">...</span>省略部分 
+  connCtx <span class="token operator">:=</span> ctx
+  <span class="token keyword">if</span> cc <span class="token operator">:=</span> srv<span class="token punctuation">.</span>ConnContext<span class="token punctuation">;</span> cc <span class="token operator">!=</span> <span class="token boolean">nil</span> <span class="token punctuation">{</span>
+   connCtx <span class="token operator">=</span> <span class="token function">cc</span><span class="token punctuation">(</span>connCtx<span class="token punctuation">,</span> rw<span class="token punctuation">)</span>
+   <span class="token keyword">if</span> connCtx <span class="token operator">==</span> <span class="token boolean">nil</span> <span class="token punctuation">{</span>
+    <span class="token function">panic</span><span class="token punctuation">(</span><span class="token string">"ConnContext returned nil"</span><span class="token punctuation">)</span>
+   <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span>
+  tempDelay <span class="token operator">=</span> <span class="token number">0</span>
+  c <span class="token operator">:=</span> srv<span class="token punctuation">.</span><span class="token function">newConn</span><span class="token punctuation">(</span>rw<span class="token punctuation">)</span>
+  c<span class="token punctuation">.</span><span class="token function">setState</span><span class="token punctuation">(</span>c<span class="token punctuation">.</span>rwc<span class="token punctuation">,</span> StateNew<span class="token punctuation">,</span> runHooks<span class="token punctuation">)</span> <span class="token comment">// before Serve can return</span>
+  <span class="token keyword">go</span> c<span class="token punctuation">.</span><span class="token function">serve</span><span class="token punctuation">(</span>connCtx<span class="token punctuation">)</span>
+ <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><div class="pagebody-copy">Serve 方法在 Listenner l 上接受传入的连接，并且为每一个连接创建 goroutine 。这些 gorutines 会读取请求并且调用 srv.Handler 去响应它们。</div>
+<h3 class="pagebody-header" id="cserve">c.Serve</h3>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-go"><code is:raw="" class="language-go"><span class="token comment">// Serve a new connection.</span>
+<span class="token keyword">func</span> <span class="token punctuation">(</span>c <span class="token operator">*</span>conn<span class="token punctuation">)</span> <span class="token function">serve</span><span class="token punctuation">(</span>ctx context<span class="token punctuation">.</span>Context<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+  <span class="token comment">// ...</span>
+ <span class="token keyword">for</span> <span class="token punctuation">{</span>
+    <span class="token comment">// 循环接受请求，一个连接可以处理多个请求</span>
+  w<span class="token punctuation">,</span> err <span class="token operator">:=</span> c<span class="token punctuation">.</span><span class="token function">readRequest</span><span class="token punctuation">(</span>ctx<span class="token punctuation">)</span>
+  <span class="token keyword">if</span> c<span class="token punctuation">.</span>r<span class="token punctuation">.</span>remain <span class="token operator">!=</span> c<span class="token punctuation">.</span>server<span class="token punctuation">.</span><span class="token function">initialReadLimitSize</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+   <span class="token comment">// If we read any bytes off the wire, we're active.</span>
+   c<span class="token punctuation">.</span><span class="token function">setState</span><span class="token punctuation">(</span>c<span class="token punctuation">.</span>rwc<span class="token punctuation">,</span> StateActive<span class="token punctuation">,</span> runHooks<span class="token punctuation">)</span>
+  <span class="token punctuation">}</span>
+  <span class="token comment">// 这行代码是重点</span>
+  serverHandler<span class="token punctuation">{</span>c<span class="token punctuation">.</span>server<span class="token punctuation">}</span><span class="token punctuation">.</span><span class="token function">ServeHTTP</span><span class="token punctuation">(</span>w<span class="token punctuation">,</span> w<span class="token punctuation">.</span>req<span class="token punctuation">)</span>
+  inFlightResponse <span class="token operator">=</span> <span class="token boolean">nil</span>
+  w<span class="token punctuation">.</span><span class="token function">cancelCtx</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+  <span class="token keyword">if</span> c<span class="token punctuation">.</span><span class="token function">hijacked</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+   <span class="token keyword">return</span>
+  <span class="token punctuation">}</span>
+ <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><h3 class="pagebody-header" id="serverhandler">serverHandler</h3>
+<div class="pagebody-copy">serverHandler 结构体是一个代理，它会代理 server 的 Handler 或 DefaultServeMux 。</div>
+</div></div><div class="pagebody code component"><div class="component-content code"> <pre class="language-go"><code is:raw="" class="language-go"><span class="token keyword">type</span> serverHandler <span class="token keyword">struct</span> <span class="token punctuation">{</span>
+ srv <span class="token operator">*</span>Server
+<span class="token punctuation">}</span>
+
+<span class="token keyword">func</span> <span class="token punctuation">(</span>sh serverHandler<span class="token punctuation">)</span> <span class="token function">ServeHTTP</span><span class="token punctuation">(</span>rw ResponseWriter<span class="token punctuation">,</span> req <span class="token operator">*</span>Request<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+  <span class="token comment">// 这个 handler 就是最初 http.ListenAndServe 传入的 Handler 类型的 handler 。</span>
+ handler <span class="token operator">:=</span> sh<span class="token punctuation">.</span>srv<span class="token punctuation">.</span>Handler
+  <span class="token comment">// 如果 http.ListenAndServe 第二个参数是 nil，那么使用 DefaultServeMux 。</span>
+ <span class="token keyword">if</span> handler <span class="token operator">==</span> <span class="token boolean">nil</span> <span class="token punctuation">{</span>
+  handler <span class="token operator">=</span> DefaultServeMux
+ <span class="token punctuation">}</span>
+ <span class="token keyword">if</span> req<span class="token punctuation">.</span>RequestURI <span class="token operator">==</span> <span class="token string">"*"</span> <span class="token operator">&#x26;&#x26;</span> req<span class="token punctuation">.</span>Method <span class="token operator">==</span> <span class="token string">"OPTIONS"</span> <span class="token punctuation">{</span>
+  handler <span class="token operator">=</span> globalOptionsHandler<span class="token punctuation">{</span><span class="token punctuation">}</span>
+ <span class="token punctuation">}</span>
+  
+ <span class="token keyword">if</span> req<span class="token punctuation">.</span>URL <span class="token operator">!=</span> <span class="token boolean">nil</span> <span class="token operator">&#x26;&#x26;</span> strings<span class="token punctuation">.</span><span class="token function">Contains</span><span class="token punctuation">(</span>req<span class="token punctuation">.</span>URL<span class="token punctuation">.</span>RawQuery<span class="token punctuation">,</span> <span class="token string">";"</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+  <span class="token keyword">var</span> allowQuerySemicolonsInUse <span class="token builtin">int32</span>
+  req <span class="token operator">=</span> req<span class="token punctuation">.</span><span class="token function">WithContext</span><span class="token punctuation">(</span>context<span class="token punctuation">.</span><span class="token function">WithValue</span><span class="token punctuation">(</span>req<span class="token punctuation">.</span><span class="token function">Context</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> silenceSemWarnContextKey<span class="token punctuation">,</span> <span class="token keyword">func</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+   atomic<span class="token punctuation">.</span><span class="token function">StoreInt32</span><span class="token punctuation">(</span><span class="token operator">&#x26;</span>allowQuerySemicolonsInUse<span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span>
+  <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+  <span class="token keyword">defer</span> <span class="token keyword">func</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+   <span class="token keyword">if</span> atomic<span class="token punctuation">.</span><span class="token function">LoadInt32</span><span class="token punctuation">(</span><span class="token operator">&#x26;</span>allowQuerySemicolonsInUse<span class="token punctuation">)</span> <span class="token operator">==</span> <span class="token number">0</span> <span class="token punctuation">{</span>
+    sh<span class="token punctuation">.</span>srv<span class="token punctuation">.</span><span class="token function">logf</span><span class="token punctuation">(</span><span class="token string">"http: URL query contains semicolon, which is no longer a supported separator; parts of the query may be stripped when parsed; see golang.org/issue/25192"</span><span class="token punctuation">)</span>
+   <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+ <span class="token punctuation">}</span>
+  <span class="token comment">// 调用 handler 的 ServeHTTP 方法处理请求。</span>
+ handler<span class="token punctuation">.</span><span class="token function">ServeHTTP</span><span class="token punctuation">(</span>rw<span class="token punctuation">,</span> req<span class="token punctuation">)</span>
+<span class="token punctuation">}</span></code></pre> </div></div>
+<div class="pagebody text component"><div class="component-content"><div class="pagebody-copy">到这里，连接中的请求，就交给了 handler.ServeHTTP 也即 mux.ServeHTTP 方法来处理。</div>
+<div class="pagebody-copy">然后 mux.ServeHTTP 方法中，mux.Handler 方法，会根据 request 中的 host 和 path 信息，找到对应的 Handler， 这个 Handler 再处理信息。</div>
+<h3 class="pagebody-header" id="总结">总结</h3>
+<div class="pagebody-copy">Go net/http 标准库，能让我们轻易地写出一个高性能的 HTTP Server，但肯定不能满足实际业务开发，比如动态路由、中间件、鉴权等这是标准库所不具有的。</div>
+<div class="pagebody-copy">很多重复性的工作和常用的工具与特性要由框架来封装和实现，go 很多高性能框架 比如 Gin 都是直接封装了 net/http，这一点难能可贵，由此可见 Go 标准库的价值。</div>
+<div class="pagebody-copy">所以学习优秀 Go web 框架的前提就是弄清楚 net/http Server 部分的源码，同时，也能方便更好的去使用和优化框架。<br>
+本文所使用的源码均来自 go 1.18.3，部分方法说明翻译自官方注释。</div>
+<div class="pagebody-copy">如有不当之处，请批评指出。</div></div></div>
+          <div class="component">
+            <div class="component-content">
+              <div class="article-copyright">
+                <a class="content" href="https://creativecommons.org/licenses/by-nc-nd/3.0/deed.zh" target="_blank">版权声明：自由转载-非商用-非衍生-保持署名（创意共享3.0许可证）</a>
+                <p class="content">作者： Austin 发表日期：2035 年 6 月 1 日</p>
+              </div>
+            </div>
+          </div>
+        </article>
+      </section>
+    </main>
+    <div class="footer-main">
+  <div class="content-body footer-wraper">
+    <div class="footer-box">
+      <div class="foot-nav">
+        <div class="foot-nav-items">
+          <div class="item">
+            <div class="logo">@jahsehllif3</div>
+            <div class="email">Email: czhtzsj@gmail.com</div>
+          </div>
+
+          <div class="item products">
+            <div class="item-title">作品</div>
+            <a href="/" target="_blank">本站博客</a>
+            <a href="https://the.top" target="_blank">TOP Link</a> 
+          </div>
+
+          <div class="item community">
+            <div class="item-title">社媒</div>
+            <a href="https://twitter.com/austinit" target="_blank">Twitter</a>
+            <a href="https://github.com/austin2035" target="_blank">Github</a>
+            <a href="https://t.me/austin2035" target="_blank">Telegram</a>
+          </div>
+          
+          <div class="item resources">
+            <div class="item-title">友链</div>
+            <a href="https://the.top" target="_blank">THE.TOP</a>
+            <a href="https://yufengbiji.com" target="_blank">驭风笔记</a>
+          </div>
+
+        </div>
+      </div>
+      <div class="bottom">
+        <div class="copyright">
+          &copy; 2023 Fork From
+          <a href="//github.com/austin2035/astro-air-blog">Astro-air-blog</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    <script>
+      var script = document.createElement("script");
+      script.src = "/static/js/initPost.js";
+      document.head.appendChild(script);
+    </script>
+  </body>
+</html>
